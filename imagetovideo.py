@@ -1,48 +1,26 @@
 import streamlit as st
-import cv2
+from PIL import Image
+from moviepy.editor import VideoClip, concatenate_videoclips, AudioFileClip, CompositeAudioClip
 import numpy as np
-from moviepy.editor import VideoFileClip, AudioFileClip, CompositeAudioClip
-import os
-import tempfile
+import io
 
-def generate_video_from_images(image_files, frame_rate=45, video_width=640, video_height=480, image_display_duration=3000, transition_duration=50):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video_file:
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        output_video = cv2.VideoWriter(temp_video_file.name, fourcc, frame_rate, (video_width, video_height))
-        
-        for i in range(len(image_files) - 1):
-            image1 = cv2.imdecode(np.frombuffer(image_files[i].getvalue(), np.uint8), cv2.IMREAD_COLOR)
-            image2 = cv2.imdecode(np.frombuffer(image_files[i + 1].getvalue(), np.uint8), cv2.IMREAD_COLOR)
-            
-            image1 = cv2.resize(image1, (video_width, video_height))
-            image2 = cv2.resize(image2, (video_width, video_height))
-            
-            for _ in range(int(image_display_duration * frame_rate / 1000)):
-                output_video.write(np.uint8(image1))
-            
-            for frame in range(transition_duration + 1):
-                alpha = frame / transition_duration
-                blended = cv2.addWeighted(image1, 1 - alpha, image2, alpha, 0)
-                output_video.write(np.uint8(blended))
-                
-        output_video.release()
-        return temp_video_file.name
+def generate_video_from_images(image_files, fps=30, duration_per_image=3):
+    clips = []
+    for img_file in image_files:
+        img = Image.open(img_file)
+        img = img.resize((640, 480))  # Resize image to 640x480
+        img_np = np.array(img)  # Convert PIL image to numpy array
+        clip = VideoClip(lambda t: img_np, duration=duration_per_image)  # Create a clip for each image
+        clips.append(clip)
+    video = concatenate_videoclips(clips, method="compose")
+    return video
 
-def add_audio_to_video(video_path, speech_audio, background_audio):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as final_video_file:
-        video_clip = VideoFileClip(video_path)
-        speech_audio_clip = AudioFileClip(speech_audio.name)
-        background_audio_clip = AudioFileClip(background_audio.name)
-
-        video_duration = video_clip.duration
-        speech_audio_clip = speech_audio_clip.subclip(0, video_duration)
-        background_audio_clip = background_audio_clip.subclip(0, video_duration).volumex(3.0)
-
-        final_audio = CompositeAudioClip([background_audio_clip, speech_audio_clip.volumex(0.1)])
-        final_clip = video_clip.set_audio(final_audio)
-        final_clip.write_videofile(final_video_file.name, codec="libx264", audio_codec="aac")
-        
-        return final_video_file.name
+def add_audio_to_video(video, speech_audio, background_audio):
+    speech_clip = AudioFileClip(speech_audio.name)
+    background_clip = AudioFileClip(background_audio.name).volumex(0.1)  # Reduce volume of background
+    composite_audio = CompositeAudioClip([speech_clip, background_clip.set_duration(speech_clip.duration)])
+    final_video = video.set_audio(composite_audio)
+    return final_video
 
 st.title('Video Generator App')
 
@@ -50,18 +28,21 @@ uploaded_images = st.file_uploader("Upload Images", accept_multiple_files=True, 
 uploaded_speech = st.file_uploader("Upload Speech Audio (MP3)", type=['mp3'])
 uploaded_background = st.file_uploader("Upload Background Audio (MP3)", type=['mp3'])
 
-if st.button('Generate Video'):
-    if uploaded_images and uploaded_speech and uploaded_background:
-        video_path = generate_video_from_images(uploaded_images)
-        final_video_path = add_audio_to_video(video_path, uploaded_speech, uploaded_background)
-        
-        st.video(final_video_path)
-        with open(final_video_path, "rb") as file:
-            st.download_button(
-                label="Download video",
-                data=file,
-                file_name="final_video.mp4",
-                mime="video/mp4"
-            )
-    else:
-        st.error("Please upload the required images and audio files.")
+if st.button('Generate Video') and uploaded_images and uploaded_speech and uploaded_background:
+    video = generate_video_from_images(uploaded_images)
+    final_video = add_audio_to_video(video, uploaded_speech, uploaded_background)
+    
+    # Save final video to a temporary file to display in Streamlit and offer for download
+    with io.BytesIO() as video_file:
+        final_video.write_videofile(video_file.name, codec="libx264", audio_codec="aac", temp_audiofile="temp-audio.m4a", remove_temp=True, fps=24)
+        video_file.seek(0)
+        st.video(video_file)
+        video_file.seek(0)
+        st.download_button(
+            label="Download Video",
+            data=video_file,
+            file_name="final_video.mp4",
+            mime="video/mp4"
+        )
+else:
+    st.error("Please upload the required images and audio files.")
