@@ -5,7 +5,6 @@ from moviepy.editor import VideoFileClip, AudioFileClip, CompositeAudioClip
 import os
 import tempfile
 
-# Function to generate video from images
 def generate_video_from_images(image_files, frame_rate=45, video_width=640, video_height=480, image_display_duration=3000, transition_duration=50):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video_file:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -29,26 +28,22 @@ def generate_video_from_images(image_files, frame_rate=45, video_width=640, vide
         output_video.release()
         return temp_video_file.name
 
-# Function to add audio to video
 def add_audio_to_video(video_path, speech_audio, background_audio):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as final_video_file:
         video_clip = VideoFileClip(video_path)
         speech_audio_clip = AudioFileClip(speech_audio.name)
         background_audio_clip = AudioFileClip(background_audio.name)
 
-        # Ensure the audio matches the video length
         video_duration = video_clip.duration
         speech_audio_clip = speech_audio_clip.subclip(0, video_duration)
         background_audio_clip = background_audio_clip.subclip(0, video_duration).volumex(3.0)
 
-        # Combine the audio clips
         final_audio = CompositeAudioClip([background_audio_clip, speech_audio_clip.volumex(0.1)])
         final_clip = video_clip.set_audio(final_audio)
         final_clip.write_videofile(final_video_file.name, codec="libx264", audio_codec="aac")
         
         return final_video_file.name
 
-# Streamlit UI
 st.title('Video Generator App')
 
 uploaded_images = st.file_uploader("Upload Images", accept_multiple_files=True, type=['jpg', 'jpeg', 'png'])
@@ -57,16 +52,12 @@ uploaded_background = st.file_uploader("Upload Background Audio (MP3)", type=['m
 
 if st.button('Generate Video'):
     if uploaded_images and uploaded_speech and uploaded_background:
-        # Generate video from images
         video_path = generate_video_from_images(uploaded_images)
-        
-        # Add audio to video
         final_video_path = add_audio_to_video(video_path, uploaded_speech, uploaded_background)
         
-        # Display the result or provide a download link
         st.video(final_video_path)
         with open(final_video_path, "rb") as file:
-            btn = st.download_button(
+            st.download_button(
                 label="Download video",
                 data=file,
                 file_name="final_video.mp4",
