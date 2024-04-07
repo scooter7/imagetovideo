@@ -3,7 +3,6 @@ from PIL import Image
 import numpy as np
 from moviepy.editor import ImageSequenceClip, CompositeAudioClip, AudioFileClip
 import tempfile
-from io import BytesIO
 
 def resize_and_pad(img, size, pad_color=(255, 255, 255)):
     img.thumbnail(size, Image.Resampling.LANCZOS)
@@ -20,10 +19,16 @@ def generate_video_from_images(image_files, size=(640, 480), fps=1, duration_per
     return video.set_duration(duration_per_image * len(images))
 
 def add_audio_to_video(video_clip, speech_audio=None, background_audio=None):
-    if speech_audio and background_audio:
-        speech_clip = AudioFileClip(speech_audio)
-        background_clip = AudioFileClip(background_audio).volumex(0.1)
-        final_audio = CompositeAudioClip([background_clip, speech_clip.set_start(0).set_duration(video_clip.duration)])
+    audio_clips = []
+    if speech_audio:
+        speech_clip = AudioFileClip(speech_audio).set_duration(video_clip.duration)
+        audio_clips.append(speech_clip)
+    if background_audio:
+        background_clip = AudioFileClip(background_audio).volumex(0.1).set_duration(video_clip.duration)
+        audio_clips.append(background_clip)
+    
+    if audio_clips:
+        final_audio = CompositeAudioClip(audio_clips)
         video_clip = video_clip.set_audio(final_audio)
     return video_clip
 
@@ -35,19 +40,25 @@ uploaded_background = st.file_uploader("Upload Background Audio (MP3)", type=['m
 
 if st.button('Generate Video') and uploaded_images:
     video_clip = generate_video_from_images(uploaded_images, duration_per_image=3)
+    speech_path = background_path = None
 
-    if uploaded_speech and uploaded_background:
-        with tempfile.NamedTemporaryFile(delete=True, suffix='.mp3') as speech_tempfile, tempfile.NamedTemporaryFile(delete=True, suffix='.mp3') as background_tempfile:
-            speech_tempfile.write(uploaded_speech.getvalue())
-            background_tempfile.write(uploaded_background.getvalue())
-            speech_tempfile.seek(0)
-            background_tempfile.seek(0)
-            video_clip = add_audio_to_video(video_clip, speech_tempfile.name, background_tempfile.name)
+    if uploaded_speech:
+        speech_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        speech_temp.write(uploaded_speech.getvalue())
+        speech_temp.close()
+        speech_path = speech_temp.name
+
+    if uploaded_background:
+        background_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        background_temp.write(uploaded_background.getvalue())
+        background_temp.close()
+        background_path = background_temp.name
+
+    video_clip = add_audio_to_video(video_clip, speech_path, background_path)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as final_video_file:
         video_clip.write_videofile(final_video_file.name, codec="libx264", audio_codec="aac", temp_audiofile="temp-audio.m4a", remove_temp=True, fps=24)
         st.video(final_video_file.name)
-        # Fix: Open the file in binary read mode and pass the content to st.download_button
         with open(final_video_file.name, "rb") as file:
             file_content = file.read()
             st.download_button(label="Download Video", data=file_content, file_name="final_video.mp4", mime="video/mp4")
