@@ -1,7 +1,7 @@
 import streamlit as st
 from PIL import Image
 import numpy as np
-from moviepy.editor import concatenate_videoclips, AudioFileClip, CompositeAudioClip
+from moviepy.editor import concatenate_videoclips, AudioFileClip, CompositeAudioClip, ImageClip
 import tempfile
 from moviepy.video.fx.all import fadein, fadeout
 
@@ -18,13 +18,13 @@ def generate_video_from_images(image_files, size=(640, 480), duration_per_image=
     clips = []
     for img_file in image_files:
         img = resize_and_pad(Image.open(img_file), size)
-        clip = ImageClip(img).set_duration(duration_per_image + fade_duration)
+        clip = ImageClip(np.array(img)).set_duration(duration_per_image)
         if fade_duration > 0:
             clip = fadein(clip, fade_duration)
             clip = fadeout(clip, fade_duration)
         clips.append(clip)
 
-    video = concatenate_videoclips(clips, method="compose", padding=-fade_duration if fade_duration > 0 else 0)
+    video = concatenate_videoclips(clips, method="compose")
     return video
 
 def add_audio_to_video(video_clip, speech_audio=None, background_audio=None):
@@ -33,23 +33,15 @@ def add_audio_to_video(video_clip, speech_audio=None, background_audio=None):
         speech_clip = AudioFileClip(speech_audio.name).set_duration(video_clip.duration)
     else:
         speech_clip = None
-    
+
     if background_audio:
         background_audio.seek(0)
         background_clip = AudioFileClip(background_audio.name).volumex(0.1).set_duration(video_clip.duration)
     else:
         background_clip = None
-    
-    if speech_clip and background_clip:
-        final_audio = CompositeAudioClip([speech_clip, background_clip])
-    elif speech_clip:
-        final_audio = speech_clip
-    elif background_clip:
-        final_audio = background_clip
-    else:
-        final_audio = None
-    
-    if final_audio:
+
+    if speech_clip or background_clip:
+        final_audio = CompositeAudioClip([clip for clip in [speech_clip, background_clip] if clip is not None])
         video_clip = video_clip.set_audio(final_audio)
     return video_clip
 
