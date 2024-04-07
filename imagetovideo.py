@@ -9,7 +9,7 @@ def resize_and_pad(img, size, pad_color=(255, 255, 255)):
     """
     Resize PIL image keeping ratio and using white background.
     """
-    img.thumbnail(size, Image.ANTIALIAS)
+    img.thumbnail(size, Image.Resampling.LANCZOS)  # Updated attribute reference
     background = Image.new('RGB', size, pad_color)
     img_w, img_h = img.size
     bg_w, bg_h = size
