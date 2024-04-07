@@ -17,8 +17,7 @@ def resize_and_pad(img, size, pad_color=(255, 255, 255)):
 def generate_video_from_images(image_files, size=(640, 480), fps=1, duration_per_image=3):
     images = [resize_and_pad(Image.open(img_file), size) for img_file in image_files]
     video = ImageSequenceClip(images, fps=fps)
-    video = video.set_duration(duration_per_image * len(images))
-    return video
+    return video.set_duration(duration_per_image * len(images))
 
 def add_audio_to_video(video_clip, speech_audio=None, background_audio=None):
     if speech_audio and background_audio:
@@ -37,24 +36,20 @@ uploaded_background = st.file_uploader("Upload Background Audio (MP3)", type=['m
 if st.button('Generate Video') and uploaded_images:
     video_clip = generate_video_from_images(uploaded_images, duration_per_image=3)
 
-    speech_temp, background_temp = None, None
-    if uploaded_speech is not None:
-        speech_temp = tempfile.NamedTemporaryFile(delete=True, suffix=".mp3")
-        speech_temp.write(uploaded_speech.getvalue())
-        speech_temp.seek(0)
-    
-    if uploaded_background is not None:
-        background_temp = tempfile.NamedTemporaryFile(delete=True, suffix=".mp3")
-        background_temp.write(uploaded_background.getvalue())
-        background_temp.seek(0)
+    if uploaded_speech and uploaded_background:
+        with tempfile.NamedTemporaryFile(delete=True, suffix='.mp3') as speech_tempfile, tempfile.NamedTemporaryFile(delete=True, suffix='.mp3') as background_tempfile:
+            speech_tempfile.write(uploaded_speech.getvalue())
+            background_tempfile.write(uploaded_background.getvalue())
+            speech_tempfile.seek(0)
+            background_tempfile.seek(0)
+            video_clip = add_audio_to_video(video_clip, speech_tempfile.name, background_tempfile.name)
 
-    if speech_temp and background_temp:
-        video_clip = add_audio_to_video(video_clip, speech_temp.name, background_temp.name)
-    
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as final_video_file:
         video_clip.write_videofile(final_video_file.name, codec="libx264", audio_codec="aac", temp_audiofile="temp-audio.m4a", remove_temp=True, fps=24)
         st.video(final_video_file.name)
-        final_video_file.seek(0)
-        st.download_button(label="Download Video", data=final_video_file, file_name="final_video.mp4", mime="video/mp4")
+        # Fix: Open the file in binary read mode and pass the content to st.download_button
+        with open(final_video_file.name, "rb") as file:
+            file_content = file.read()
+            st.download_button(label="Download Video", data=file_content, file_name="final_video.mp4", mime="video/mp4")
 else:
     st.error("Please upload the required images.")
