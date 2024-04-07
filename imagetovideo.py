@@ -2,8 +2,8 @@ import streamlit as st
 from PIL import Image
 import numpy as np
 from moviepy.editor import concatenate_videoclips, AudioFileClip, CompositeAudioClip
-from moviepy.video.VideoClip import ImageClip
 import tempfile
+from moviepy.video.fx.all import fadein, fadeout
 
 def resize_and_pad(img, size, pad_color=(255, 255, 255)):
     img.thumbnail(size, Image.Resampling.LANCZOS)
@@ -18,31 +18,38 @@ def generate_video_from_images(image_files, size=(640, 480), duration_per_image=
     clips = []
     for img_file in image_files:
         img = resize_and_pad(Image.open(img_file), size)
-        clip = ImageClip(img).set_duration(duration_per_image)
-        if fade_duration > 0 and len(clips) > 0:  # Apply fade transition if not the first image
-            clip = clip.crossfadein(fade_duration)
+        clip = ImageClip(img).set_duration(duration_per_image + fade_duration)
+        if fade_duration > 0:
+            clip = fadein(clip, fade_duration)
+            clip = fadeout(clip, fade_duration)
         clips.append(clip)
 
-    # Adjust duration to include fades
-    total_duration = duration_per_image * len(image_files) + fade_duration * (len(image_files) - 1)
     video = concatenate_videoclips(clips, method="compose", padding=-fade_duration if fade_duration > 0 else 0)
-    video = video.set_duration(total_duration)
-
     return video
 
 def add_audio_to_video(video_clip, speech_audio=None, background_audio=None):
-    audio_clips = []
     if speech_audio:
-        speech_audio.seek(0)  # Reset pointer to start of file
-        speech_clip = AudioFileClip(speech_audio.name)
-        audio_clips.append(speech_clip)
-    if background_audio:
-        background_audio.seek(0)  # Reset pointer to start of file
-        background_clip = AudioFileClip(background_audio.name).volumex(0.1)
-        audio_clips.append(background_clip)
+        speech_audio.seek(0)
+        speech_clip = AudioFileClip(speech_audio.name).set_duration(video_clip.duration)
+    else:
+        speech_clip = None
     
-    if audio_clips:
-        final_audio = CompositeAudioClip(audio_clips).set_duration(video_clip.duration)
+    if background_audio:
+        background_audio.seek(0)
+        background_clip = AudioFileClip(background_audio.name).volumex(0.1).set_duration(video_clip.duration)
+    else:
+        background_clip = None
+    
+    if speech_clip and background_clip:
+        final_audio = CompositeAudioClip([speech_clip, background_clip])
+    elif speech_clip:
+        final_audio = speech_clip
+    elif background_clip:
+        final_audio = background_clip
+    else:
+        final_audio = None
+    
+    if final_audio:
         video_clip = video_clip.set_audio(final_audio)
     return video_clip
 
@@ -67,7 +74,7 @@ if st.button('Generate Video') and uploaded_images:
         background_temp.write(uploaded_background.getvalue())
         background_temp.seek(0)
 
-    video_clip = generate_video_from_images(uploaded_images, duration_per_image=image_display_duration, fade_duration=fade_duration)
+    video_clip = generate_video_from_images(uploaded_images, duration_per_image=image_display_duration, fade_duration=fade_duration if add_fades else 0)
     video_clip = add_audio_to_video(video_clip, speech_temp, background_temp)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as final_video_file:
